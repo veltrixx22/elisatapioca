@@ -1,5 +1,5 @@
 /**
- * Elisa Tapiocas - Internal Management System
+ * Eliza Tapiocas - Internal Management System
  */
 
 import React, { useState, useMemo } from 'react';
@@ -793,7 +793,7 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
           </style>
         </head>
         <body>
-          <h1>Elisa</h1>
+          <h1>Eliza</h1>
           <div class="subtitle">Tapiocas</div>
           
           <div class="header-info">
@@ -863,7 +863,7 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
           </table>
 
           <div style="margin-top: 50px; text-align: center; font-size: 10px; opacity: 0.5;">
-            Documento gerado pelo Sistema Interno Elisa Tapiocas em ${new Date().toLocaleString()}
+            Documento gerado pelo Sistema Interno Eliza Tapiocas em ${new Date().toLocaleString()}
           </div>
 
           <script>window.print();</script>
@@ -1302,7 +1302,7 @@ export default function App() {
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-64 bg-primary text-white h-screen sticky top-0 flex-col p-4 shadow-2xl">
         <div className="p-8 mb-8 text-center">
-          <h1 className="text-4xl font-serif italic mb-1 leading-none">Elisa</h1>
+          <h1 className="text-4xl font-serif italic mb-1 leading-none">Eliza</h1>
           <p className="text-[10px] tracking-[0.3em] uppercase opacity-70 font-bold">Tapiocas</p>
         </div>
         
@@ -1331,7 +1331,7 @@ export default function App() {
         {/* Mobile Header */}
         <header className="lg:hidden mb-8 bg-white p-8 rounded-[2.5rem] shadow-sm border border-stone-100">
           <div className="flex flex-col items-center">
-             <h1 className="brand-title">Elisa <span>Tapiocas</span></h1>
+             <h1 className="brand-title">Eliza <span>Tapiocas</span></h1>
              <p className="brand-subtitle">Tapiocas fresquinhas feitas com carinho</p>
              
              <div className="flex flex-wrap justify-center gap-2 w-full border-t border-stone-50 mt-6 pt-6">

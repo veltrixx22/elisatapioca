@@ -1,5 +1,5 @@
 /**
- * Elisa Tapiocas - Internal Management System Types
+ * Eliza Tapiocas - Internal Management System Types
  */
 
 export enum OrderStatus {
