@@ -35,64 +35,65 @@ export enum ExitCategory {
 }
 
 export interface OrderItem {
-  productId: string;
-  name: string;
+  id: string;
+  order_id: string;
+  product_id?: string;
+  product_name: string;
   quantity: number;
-  price: number;
+  unit_price: number;
+  subtotal: number;
+  created_at: string;
 }
 
 export interface Order {
   id: string;
-  customerName: string;
-  phone: string;
-  deliveryType: DeliveryType;
+  customer_name: string;
+  customer_phone: string;
+  delivery_type: string;
   address?: string;
-  items: OrderItem[];
+  payment_method: string;
+  status: string;
+  notes?: string;
   total: number;
-  paymentMethod: PaymentMethod;
-  status: OrderStatus;
-  observations?: string;
-  createdAt: string;
-  isClosed?: boolean;
+  created_at: string;
+  items?: OrderItem[];
 }
 
 export interface Product {
   id: string;
   name: string;
-  category: ProductCategory;
+  category: string;
   price: number;
+  is_active: boolean;
+  created_at: string;
 }
 
 export interface MoneyEntry {
   id: string;
   description: string;
   value: number;
-  paymentType: PaymentMethod;
-  date: string;
-  orderId?: string; // Optional reference to an order
-  isClosed?: boolean;
+  payment_type: string;
+  order_id?: string;
+  created_at: string;
 }
 
 export interface MoneyExit {
   id: string;
   description: string;
   value: number;
-  category: ExitCategory;
-  date: string;
-  isClosed?: boolean;
+  category: string;
+  created_at: string;
 }
 
 export interface CashClosing {
   id: string;
-  date: string;
-  totalEntries: number;
-  totalExits: number;
-  profit: number;
-  orderCount: number;
-  completedOrders: number;
-  cancelledOrders: number;
-  createdAt: string;
-  entries: MoneyEntry[];
-  exits: MoneyExit[];
-  orders: Order[];
+  closing_date: string;
+  closed_at: string;
+  total_orders: number;
+  completed_orders: number;
+  canceled_orders: number;
+  entries_total: number;
+  exits_total: number;
+  estimated_profit: number;
+  snapshot: any;
 }

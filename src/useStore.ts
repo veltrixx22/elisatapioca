@@ -1,221 +1,205 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from './lib/supabase';
 import { 
   Order, Product, MoneyEntry, MoneyExit, CashClosing, 
-  OrderStatus, PaymentMethod, DeliveryType, ProductCategory, OrderItem 
+  OrderStatus
 } from './types';
 
-const STORAGE_KEY = 'elisa_tapiocas_data';
-
-interface AppState {
-  orders: Order[];
-  products: Product[];
-  entries: MoneyEntry[];
-  exits: MoneyExit[];
-  closings: CashClosing[];
-}
-
-const initialState: AppState = {
-  orders: [],
-  products: [
-    { id: '1', name: 'Tapioca de Frango com Catupiry', category: ProductCategory.SAVORY, price: 15 },
-    { id: '2', name: 'Tapioca de Carne Seca', category: ProductCategory.SAVORY, price: 18 },
-    { id: '3', name: 'Tapioca de Coco com Leite Condensado', category: ProductCategory.CONDENSED_MILK, price: 12 },
-    { id: '4', name: 'Tapioca de Brigadeiro', category: ProductCategory.SWEET_FILLED, price: 14 },
-  ],
-  entries: [],
-  exits: [],
-  closings: [],
-};
-
 export function useStore() {
-  const [state, setState] = useState<AppState>(initialState);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [entries, setEntries] = useState<MoneyEntry[]>([]);
+  const [exits, setExits] = useState<MoneyExit[]>([]);
+  const [closings, setClosings] = useState<CashClosing[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        setState(JSON.parse(saved));
-      } catch (e) {
-        console.error('Error loading data', e);
-      }
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [
+        { data: prodData }, 
+        { data: ordData }, 
+        { data: entryData }, 
+        { data: exitData }, 
+        { data: closeData }
+      ] = await Promise.all([
+        supabase.from('products').select('*').order('name'),
+        supabase.from('orders').select('*, items:order_items(*)').order('created_at', { ascending: false }),
+        supabase.from('cash_entries').select('*').order('created_at', { ascending: false }),
+        supabase.from('cash_exits').select('*').order('created_at', { ascending: false }),
+        supabase.from('cash_closings').select('*').order('closing_date', { ascending: false })
+      ]);
+
+      if (prodData) setProducts(prodData);
+      if (ordData) setOrders(ordData);
+      if (entryData) setEntries(entryData);
+      if (exitData) setExits(exitData);
+      if (closeData) setClosings(closeData);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setLoading(false);
     }
-    setIsLoaded(true);
   }, []);
 
   useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    }
-  }, [state, isLoaded]);
+    fetchData();
+  }, [fetchData]);
 
   // Orders
-  const addOrder = (order: Omit<Order, 'id' | 'createdAt'>) => {
-    const newOrder: Order = {
-      ...order,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString(),
-      isClosed: false,
-    };
-    setState(prev => ({ ...prev, orders: [newOrder, ...prev.orders] }));
+  const addOrder = async (orderData: any) => {
+    const { items, ...orderInfo } = orderData;
     
-    // If order is completed, add to entries automatically? 
-    // Usually, we add to entries when it's settled.
-    if (newOrder.status === OrderStatus.COMPLETED) {
-      addEntry({
-        description: `Venda: ${newOrder.customerName}`,
-        value: newOrder.total,
-        paymentType: newOrder.paymentMethod,
-        date: new Date().toISOString(),
-        orderId: newOrder.id
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .insert([orderInfo])
+      .select()
+      .single();
+
+    if (orderError) throw orderError;
+
+    if (items && items.length > 0) {
+      const orderItems = items.map((item: any) => ({
+        order_id: order.id,
+        product_id: item.product_id || null,
+        product_name: item.product_name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        subtotal: item.subtotal
+      }));
+
+      const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+      if (itemsError) throw itemsError;
+    }
+
+    // Auto entry if completed
+    if (order.status === OrderStatus.COMPLETED) {
+      await addEntry({
+        description: `Venda: ${order.customer_name}`,
+        value: order.total,
+        payment_type: order.payment_method,
+        order_id: order.id
       });
     }
+
+    await fetchData();
+    return order;
   };
 
-  const updateOrder = (id: string, updates: Partial<Order>) => {
-    setState(prev => {
-      const oldOrder = prev.orders.find(o => o.id === id);
-      const newOrders = prev.orders.map(o => o.id === id ? { ...o, ...updates } : o);
-      
-      // Handle automatic entry creation if status changes to COMPLETED
-      let newEntries = prev.entries;
-      if (oldOrder && updates.status === OrderStatus.COMPLETED && oldOrder.status !== OrderStatus.COMPLETED) {
-        const entryExists = prev.entries.some(e => e.orderId === id);
-        if (!entryExists) {
-          const entry: MoneyEntry = {
-            id: crypto.randomUUID(),
-            description: `Venda: ${oldOrder.customerName}`,
-            value: oldOrder.total,
-            paymentType: oldOrder.paymentMethod,
-            date: new Date().toISOString(),
-            orderId: id
-          };
-          newEntries = [entry, ...prev.entries];
+  const updateOrder = async (id: string, updates: Partial<Order>) => {
+    const { error } = await supabase.from('orders').update(updates).eq('id', id);
+    if (error) throw error;
+
+    // Check if status changed to completed to trigger entry
+    if (updates.status === OrderStatus.COMPLETED) {
+      const { data: existingEntry } = await supabase.from('cash_entries').select('id').eq('order_id', id).single();
+      if (!existingEntry) {
+        const { data: order } = await supabase.from('orders').select('*').eq('id', id).single();
+        if (order) {
+          await addEntry({
+            description: `Venda: ${order.customer_name}`,
+            value: order.total,
+            payment_type: order.payment_method,
+            order_id: order.id
+          });
         }
       }
+    }
 
-      return { ...prev, orders: newOrders, entries: newEntries };
-    });
+    await fetchData();
   };
 
-  const deleteOrder = (id: string) => {
-    setState(prev => ({ ...prev, orders: prev.orders.filter(o => o.id !== id) }));
+  const deleteOrder = async (id: string) => {
+    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
   // Products
-  const addProduct = (product: Omit<Product, 'id'>) => {
-    const newProduct: Product = { ...product, id: crypto.randomUUID() };
-    setState(prev => ({ ...prev, products: [...prev.products, newProduct] }));
+  const addProduct = async (product: Omit<Product, 'id' | 'created_at'>) => {
+    const { error } = await supabase.from('products').insert([product]);
+    if (error) throw error;
+    await fetchData();
   };
 
-  const updateProduct = (id: string, updates: Partial<Product>) => {
-    setState(prev => ({
-      ...prev,
-      products: prev.products.map(p => p.id === id ? { ...p, ...updates } : p)
-    }));
+  const updateProduct = async (id: string, updates: Partial<Product>) => {
+    const { error } = await supabase.from('products').update(updates).eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
-  const deleteProduct = (id: string) => {
-    setState(prev => ({ ...prev, products: prev.products.filter(p => p.id !== id) }));
+  const deleteProduct = async (id: string) => {
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
   // Entries
-  const addEntry = (entry: Omit<MoneyEntry, 'id'>) => {
-    const newEntry: MoneyEntry = { ...entry, id: crypto.randomUUID(), isClosed: false };
-    setState(prev => ({ ...prev, entries: [newEntry, ...prev.entries] }));
+  const addEntry = async (entry: Omit<MoneyEntry, 'id' | 'created_at'>) => {
+    const { error } = await supabase.from('cash_entries').insert([entry]);
+    if (error) throw error;
+    await fetchData();
   };
 
-  const updateEntry = (id: string, updates: Partial<MoneyEntry>) => {
-    setState(prev => ({
-      ...prev,
-      entries: prev.entries.map(e => e.id === id ? { ...e, ...updates } : e)
-    }));
+  const updateEntry = async (id: string, updates: Partial<MoneyEntry>) => {
+    const { error } = await supabase.from('cash_entries').update(updates).eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
-  const deleteEntry = (id: string) => {
-    setState(prev => ({ ...prev, entries: prev.entries.filter(e => e.id !== id) }));
+  const deleteEntry = async (id: string) => {
+    const { error } = await supabase.from('cash_entries').delete().eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
   // Exits
-  const addExit = (exit: Omit<MoneyExit, 'id'>) => {
-    const newExit: MoneyExit = { ...exit, id: crypto.randomUUID(), isClosed: false };
-    setState(prev => ({ ...prev, exits: [newExit, ...prev.exits] }));
+  const addExit = async (exit: Omit<MoneyExit, 'id' | 'created_at'>) => {
+    const { error } = await supabase.from('cash_exits').insert([exit]);
+    if (error) throw error;
+    await fetchData();
   };
 
-  const updateExit = (id: string, updates: Partial<MoneyExit>) => {
-    setState(prev => ({
-      ...prev,
-      exits: prev.exits.map(e => e.id === id ? { ...e, ...updates } : e)
-    }));
+  const updateExit = async (id: string, updates: Partial<MoneyExit>) => {
+    const { error } = await supabase.from('cash_exits').update(updates).eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
-  const deleteExit = (id: string) => {
-    setState(prev => ({ ...prev, exits: prev.exits.filter(e => e.id !== id) }));
+  const deleteExit = async (id: string) => {
+    const { error } = await supabase.from('cash_exits').delete().eq('id', id);
+    if (error) throw error;
+    await fetchData();
   };
 
   // Cash Closing
-  const closeCash = (closing: Omit<CashClosing, 'id' | 'createdAt'>, shouldMarkClosed: boolean = true) => {
-    const today = new Date().toISOString().split('T')[0];
-    const newClosing: CashClosing = {
-      ...closing,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString()
-    };
+  const closeCash = async (closingData: Omit<CashClosing, 'id' | 'closed_at'>) => {
+    const { error } = await supabase
+      .from('cash_closings')
+      .upsert([closingData], { onConflict: 'closing_date' });
     
-    setState(prev => {
-      // Remove any previous closing for today if we are refacing
-      const otherClosings = prev.closings.filter(c => c.date !== closing.date);
-      let newState = { ...prev, closings: [newClosing, ...otherClosings] };
-      
-      if (shouldMarkClosed) {
-        newState.orders = prev.orders.map(o => o.createdAt.startsWith(today) ? { ...o, isClosed: true } : o);
-        newState.entries = prev.entries.map(e => e.date.startsWith(today) ? { ...e, isClosed: true } : e);
-        newState.exits = prev.exits.map(e => e.date.startsWith(today) ? { ...e, isClosed: true } : e);
-      }
-      
-      return newState;
-    });
-  };
-
-  const clearData = () => {
-    if (confirm('Tem certeza que deseja apagar TODOS os dados? Esta ação não pode ser desfeita.')) {
-      setState(initialState);
-      localStorage.removeItem(STORAGE_KEY);
-    }
-  };
-
-  const exportData = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(state));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", `elisa_tapiocas_backup_${new Date().toISOString().split('T')[0]}.json`);
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-  };
-
-  const importData = (data: AppState) => {
-    setState(data);
+    if (error) throw error;
+    await fetchData();
   };
 
   return {
-    state,
-    isLoaded,
-    addOrder,
-    updateOrder,
-    deleteOrder,
-    addProduct,
-    updateProduct,
-    deleteProduct,
-    addEntry,
-    updateEntry,
-    deleteEntry,
-    addExit,
-    updateExit,
-    deleteExit,
-    closeCash,
-    clearData,
-    exportData,
-    importData
+    state: { orders, products, entries, exits, closings },
+    loading,
+    actions: {
+      addOrder,
+      updateOrder,
+      deleteOrder,
+      addProduct,
+      updateProduct,
+      deleteProduct,
+      addEntry,
+      updateEntry,
+      deleteEntry,
+      addExit,
+      updateExit,
+      deleteExit,
+      closeCash,
+      refresh: fetchData
+    }
   };
 }

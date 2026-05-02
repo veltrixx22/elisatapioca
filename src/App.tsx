@@ -34,7 +34,9 @@ import {
   Cell, PieChart as RePieChart, Pie
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
+import { Toaster, toast } from 'react-hot-toast';
 import { useStore } from './useStore';
+import { isSupabaseConfigured } from './lib/supabase';
 import { 
   OrderStatus, 
   PaymentMethod, 
@@ -94,18 +96,18 @@ const StatCard = ({ label, value, colorClass }: { label: string, value: string |
 const DashboardView = ({ state, actions, setActiveView }: { state: any, actions: any, setActiveView: any }) => {
   const stats = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const todayOrders = state.orders.filter((o: Order) => o.createdAt.startsWith(today) && !o.isClosed);
-    const todayEntries = state.entries.filter((e: MoneyEntry) => e.date.startsWith(today) && !e.isClosed);
-    const todayExits = state.exits.filter((e: MoneyExit) => e.date.startsWith(today) && !e.isClosed);
+    const todayOrders = state.orders.filter((o: any) => o.created_at.startsWith(today));
+    const todayEntries = state.entries.filter((e: any) => e.created_at.startsWith(today));
+    const todayExits = state.exits.filter((e: any) => e.created_at.startsWith(today));
     
-    const revenueToday = todayEntries.reduce((sum: number, e: MoneyEntry) => sum + e.value, 0);
-    const costToday = todayExits.reduce((sum: number, e: MoneyExit) => sum + e.value, 0);
+    const revenueToday = todayEntries.reduce((sum: number, e: any) => sum + Number(e.value), 0);
+    const costToday = todayExits.reduce((sum: number, e: any) => sum + Number(e.value), 0);
     
     // Product Stats
     const productSales: Record<string, number> = {};
-    state.orders.filter((o: Order) => o.status === OrderStatus.COMPLETED).forEach((o: Order) => {
-      o.items.forEach(item => {
-        productSales[item.name] = (productSales[item.name] || 0) + item.quantity;
+    state.orders.filter((o: any) => o.status === OrderStatus.COMPLETED).forEach((o: any) => {
+      o.items?.forEach((item: any) => {
+        productSales[item.product_name] = (productSales[item.product_name] || 0) + item.quantity;
       });
     });
     const bestSelling = Object.entries(productSales).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Nenhum';
@@ -115,10 +117,10 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
       revenueToday,
       costToday,
       profitToday: revenueToday - costToday,
-      pendingToday: todayOrders.filter((o: Order) => o.status === OrderStatus.PENDING).length,
-      completedToday: todayOrders.filter((o: Order) => o.status === OrderStatus.COMPLETED).length,
-      cancelledToday: todayOrders.filter((o: Order) => o.status === OrderStatus.CANCELLED).length,
-      totalSold: state.entries.reduce((sum: number, e: MoneyEntry) => sum + e.value, 0),
+      pendingToday: todayOrders.filter((o: any) => o.status === OrderStatus.PENDING).length,
+      completedToday: todayOrders.filter((o: any) => o.status === OrderStatus.COMPLETED).length,
+      cancelledToday: todayOrders.filter((o: any) => o.status === OrderStatus.CANCELLED).length,
+      totalSold: state.entries.reduce((sum: number, e: any) => sum + Number(e.value), 0),
       totalOrders: state.orders.length,
       bestSelling
     };
@@ -132,7 +134,7 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
         </ViewTitle>
         <div className="flex gap-3">
           <button 
-            onClick={() => actions.setActiveView('orders')}
+            onClick={() => setActiveView('orders')}
             className="bg-accent text-white px-6 py-3 rounded-full text-sm font-bold shadow-lg shadow-orange-200"
           >
             + Novo Pedido
@@ -157,15 +159,15 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
         <section className="flex-1 bg-white rounded-[40px] shadow-sm p-8 flex flex-col">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold">Pedidos Recentes</h3>
-            <span onClick={() => {}} className="text-xs text-accent font-bold uppercase cursor-pointer">Ver todos</span>
+            <span onClick={() => setActiveView('orders')} className="text-xs text-accent font-bold uppercase cursor-pointer">Ver todos</span>
           </div>
           <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-            {state.orders.filter((o: Order) => !o.isClosed).slice(0, 5).map((order: Order) => (
+            {state.orders.slice(0, 5).map((order: any) => (
               <div key={order.id} className="flex items-center justify-between p-4 bg-warm-bg rounded-2xl border border-stone-100">
                 <div className="flex-1">
-                  <p className="font-bold">{order.customerName}</p>
+                  <p className="font-bold">{order.customer_name}</p>
                   <p className="text-xs opacity-60 truncate w-48 sm:w-auto">
-                    {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
+                    {order.items?.map((i: any) => `${i.quantity}x ${i.product_name}`).join(', ') || 'Nenhum item'}
                   </p>
                 </div>
                 <div className="text-right mr-4 sm:mr-6">
@@ -186,17 +188,17 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
           <div className="space-y-6">
             {Object.entries(
               state.orders
-                .filter((o: Order) => o.status === OrderStatus.COMPLETED && !o.isClosed)
-                .reduce((acc: any, o: Order) => {
-                  o.items.forEach(i => acc[i.name] = (acc[i.name] || 0) + i.quantity);
+                .filter((o: any) => o.status === OrderStatus.COMPLETED)
+                .reduce((acc: any, o: any) => {
+                  o.items?.forEach((i: any) => acc[i.product_name] = (acc[i.product_name] || 0) + i.quantity);
                   return acc;
                 }, {})
             )
-              .sort((a: any, b: any) => b[1] - a[1])
+              .sort((a: any, b: any) => Number(b[1]) - Number(a[1]))
               .slice(0, 5)
               .map(([name, qty]: any, idx, arr) => {
                 const total = arr.reduce((sum: number, [_, q]: any) => sum + q, 0);
-                const percent = Math.round((qty / total) * 100) || 0;
+                const percent = Math.round((Number(qty) / total) * 100) || 0;
                 const colors = ['bg-accent', 'bg-secondary', 'bg-primary'];
                 return (
                   <div key={name} className="relative">
@@ -213,21 +215,9 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
                   </div>
                 );
               })}
-            {state.orders.filter((o: Order) => o.status === OrderStatus.COMPLETED).length === 0 && (
+            {state.orders.filter((o: any) => o.status === OrderStatus.COMPLETED).length === 0 && (
               <p className="text-xs text-stone-400 text-center py-4">Aguardando vendas concluídas...</p>
             )}
-          </div>
-          
-          <div className="mt-auto pt-8">
-            <div className="bg-warm-bg p-4 rounded-2xl">
-              <p className="text-[10px] uppercase font-bold opacity-40 mb-2">Backups</p>
-              <button 
-                onClick={() => actions.exportData()}
-                className="w-full text-xs font-bold py-2 border border-stone-200 rounded-lg hover:bg-white transition-all uppercase"
-              >
-                Exportar JSON
-              </button>
-            </div>
           </div>
         </section>
       </div>
@@ -237,54 +227,59 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
 
 const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
   const [showModal, setShowModal] = useState(false);
-  const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+  const [editingOrder, setEditingOrder] = useState<any>(null);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     
-    // Process items (for simplicity, we assume one item selected from list for now or multiple via a list)
-    // Actually let's make it a bit dynamic
     const items: any[] = [];
     state.products.forEach((p: Product) => {
       const qty = parseInt(formData.get(`qty_${p.id}`) as string || '0');
       if (qty > 0) {
         items.push({
-          productId: p.id,
-          name: p.name,
+          product_id: p.id,
+          product_name: p.name,
           quantity: qty,
-          price: p.price
+          unit_price: p.price,
+          subtotal: p.price * qty
         });
       }
     });
 
     if (items.length === 0) {
-      alert('Selecione pelo menos um item');
+      toast.error('Selecione pelo menos um item');
       return;
     }
 
-    const total = items.reduce((sum, i) => sum + (i.price * i.quantity), 0);
+    const total = items.reduce((sum, i) => sum + i.subtotal, 0);
     
     const orderData = {
-      customerName: formData.get('customerName') as string,
-      phone: formData.get('phone') as string,
-      deliveryType: formData.get('deliveryType') as DeliveryType,
+      customer_name: formData.get('customerName') as string,
+      customer_phone: formData.get('phone') as string,
+      delivery_type: formData.get('deliveryType') as string,
       address: formData.get('address') as string,
       items,
       total,
-      paymentMethod: formData.get('paymentMethod') as PaymentMethod,
-      status: formData.get('status') as OrderStatus,
-      observations: formData.get('observations') as string,
+      payment_method: formData.get('paymentMethod') as string,
+      status: formData.get('status') as string,
+      notes: formData.get('observations') as string,
     };
 
-    if (editingOrder) {
-      actions.updateOrder(editingOrder.id, orderData);
-    } else {
-      actions.addOrder(orderData);
+    try {
+      if (editingOrder) {
+        await actions.updateOrder(editingOrder.id, orderData);
+        toast.success('Pedido atualizado!');
+      } else {
+        await actions.addOrder(orderData);
+        toast.success('Pedido cadastrado!');
+      }
+      setShowModal(false);
+      setEditingOrder(null);
+    } catch (err) {
+      toast.error('Erro ao salvar pedido');
+      console.error(err);
     }
-
-    setShowModal(false);
-    setEditingOrder(null);
   };
 
   return (
@@ -304,7 +299,7 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
             Nenhum pedido cadastrado ainda.
           </Card>
         ) : (
-          state.orders.map((order: Order) => (
+          state.orders.map((order: any) => (
             <Card key={order.id} className="relative overflow-hidden">
               <div className={`absolute top-0 left-0 w-1 h-full ${
                 order.status === OrderStatus.COMPLETED ? 'bg-green-500' : 
@@ -312,21 +307,21 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
               }`} />
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <h4 className="font-bold text-lg text-stone-800">{order.customerName}</h4>
+                  <h4 className="font-bold text-lg text-stone-800">{order.customer_name}</h4>
                   <p className="flex items-center gap-1 text-xs text-stone-500">
-                    <Clock size={12} /> {formatDate(order.createdAt)}
+                    <Clock size={12} /> {formatDate(order.created_at)}
                   </p>
                 </div>
-                <span className={`px-2 py-1 rounded-full text-[10px] font-bold border uppercase ${getStatusColor(order.status)}`}>
+                <span className={`px-2 py-1 rounded-full text-[10px] font-bold border uppercase ${getStatusColor(order.status as OrderStatus)}`}>
                   {order.status}
                 </span>
               </div>
 
               <div className="space-y-1 mb-4">
-                {order.items.map((item, idx) => (
+                {order.items?.map((item: any, idx: number) => (
                   <div key={idx} className="flex justify-between text-sm">
-                    <span className="text-stone-600">{item.quantity}x {item.name}</span>
-                    <span className="text-stone-400">{formatCurrency(item.price * item.quantity)}</span>
+                    <span className="text-stone-600">{item.quantity}x {item.product_name}</span>
+                    <span className="text-stone-400">{formatCurrency(Number(item.unit_price) * item.quantity)}</span>
                   </div>
                 ))}
               </div>
@@ -341,7 +336,12 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
                     <Edit2 size={18} />
                   </button>
                   <button 
-                    onClick={() => actions.deleteOrder(order.id)}
+                    onClick={async () => {
+                      if(confirm('Excluir pedido?')) {
+                        await actions.deleteOrder(order.id);
+                        toast.success('Pedido excluído');
+                      }
+                    }}
                     className="p-2 text-red-300 hover:text-red-500 transition-colors"
                   >
                     <Trash2 size={18} />
@@ -353,13 +353,19 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
                 {order.status !== OrderStatus.COMPLETED && order.status !== OrderStatus.CANCELLED && (
                   <>
                     <button 
-                      onClick={() => actions.updateOrder(order.id, { status: OrderStatus.COMPLETED })}
+                      onClick={() => {
+                        actions.updateOrder(order.id, { status: OrderStatus.COMPLETED });
+                        toast.success('Pedido concluído!');
+                      }}
                       className="bg-green-50 text-green-600 px-3 py-1 rounded-lg text-xs font-bold border border-green-200 hover:bg-green-100"
                     >
                       Concluir
                     </button>
                     <button 
-                      onClick={() => actions.updateOrder(order.id, { status: OrderStatus.CANCELLED })}
+                      onClick={() => {
+                        actions.updateOrder(order.id, { status: OrderStatus.CANCELLED });
+                        toast.success('Pedido cancelado');
+                      }}
                       className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-xs font-bold border border-red-200 hover:bg-red-100"
                     >
                       Cancelar
@@ -387,18 +393,18 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Nome do Cliente *</label>
-                  <input required name="customerName" defaultValue={editingOrder?.customerName} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 focus:ring-2 focus:ring-accent outline-none" />
+                  <input required name="customerName" defaultValue={editingOrder?.customer_name} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 focus:ring-2 focus:ring-accent outline-none" />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Telefone</label>
-                  <input name="phone" defaultValue={editingOrder?.phone} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 focus:ring-2 focus:ring-accent outline-none" placeholder="(00) 00000-0000" />
+                  <input name="phone" defaultValue={editingOrder?.customer_phone} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 focus:ring-2 focus:ring-accent outline-none" placeholder="(00) 00000-0000" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Tipo de Entrega</label>
-                  <select name="deliveryType" defaultValue={editingOrder?.deliveryType || DeliveryType.PICKUP} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
+                  <select name="deliveryType" defaultValue={editingOrder?.delivery_type || DeliveryType.PICKUP} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
                     <option value={DeliveryType.PICKUP}>Retirada</option>
                     <option value={DeliveryType.DELIVERY}>Entrega</option>
                   </select>
@@ -423,7 +429,7 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
                 <label className="block text-xs font-bold text-stone-500 uppercase mb-3 text-center">Itens do Pedido</label>
                 <div className="space-y-3 max-h-48 overflow-y-auto px-2">
                   {state.products.map((p: Product) => {
-                    const item = editingOrder?.items.find(i => i.productId === p.id);
+                    const item = editingOrder?.items?.find((i: any) => i.product_id === p.id);
                     return (
                       <div key={p.id} className="flex items-center justify-between gap-4 p-2 bg-stone-50 rounded-xl border border-stone-100">
                         <div className="flex-1">
@@ -446,7 +452,7 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-stone-100 pt-4">
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Forma de Pagamento</label>
-                  <select name="paymentMethod" defaultValue={editingOrder?.paymentMethod || PaymentMethod.PIX} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
+                  <select name="paymentMethod" defaultValue={editingOrder?.payment_method || PaymentMethod.PIX} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
                     <option value={PaymentMethod.PIX}>Pix</option>
                     <option value={PaymentMethod.CASH}>Dinheiro</option>
                     <option value={PaymentMethod.CARD}>Cartão</option>
@@ -454,7 +460,7 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Observações</label>
-                  <textarea name="observations" defaultValue={editingOrder?.observations} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none h-10" />
+                  <textarea name="observations" defaultValue={editingOrder?.notes} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none h-10" />
                 </div>
               </div>
 
@@ -471,33 +477,39 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
 
 const ProductsView = ({ state, actions }: { state: any, actions: any }) => {
   const [showModal, setShowModal] = useState(false);
-  const [editingItem, setEditingItem] = useState<Product | null>(null);
+  const [editingItem, setEditingItem] = useState<any>(null);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data = {
       name: formData.get('name') as string,
-      category: formData.get('category') as ProductCategory,
+      category: formData.get('category') as string,
       price: parseFloat(formData.get('price') as string),
     };
 
-    if (editingItem) {
-      actions.updateProduct(editingItem.id, data);
-    } else {
-      actions.addProduct(data);
+    try {
+      if (editingItem) {
+        await actions.updateProduct(editingItem.id, data);
+        toast.success('Produto atualizado!');
+      } else {
+        await actions.addProduct({ ...data, is_active: true });
+        toast.success('Produto cadastrado!');
+      }
+      setShowModal(false);
+      setEditingItem(null);
+    } catch (err) {
+      toast.error('Erro ao salvar produto');
     }
-    setShowModal(false);
-    setEditingItem(null);
   };
 
   const productSales = useMemo(() => {
     const sales: Record<string, { qty: number, total: number }> = {};
-    state.orders.filter((o: Order) => o.status === OrderStatus.COMPLETED).forEach((o: Order) => {
-      o.items.forEach(item => {
-        if (!sales[item.productId]) sales[item.productId] = { qty: 0, total: 0 };
-        sales[item.productId].qty += item.quantity;
-        sales[item.productId].total += item.price * item.quantity;
+    state.orders.filter((o: any) => o.status === OrderStatus.COMPLETED).forEach((o: any) => {
+      o.items?.forEach((item: any) => {
+        if (!sales[item.product_id]) sales[item.product_id] = { qty: 0, total: 0 };
+        sales[item.product_id].qty += item.quantity;
+        sales[item.product_id].total += Number(item.unit_price) * item.quantity;
       });
     });
     return sales;
@@ -515,7 +527,7 @@ const ProductsView = ({ state, actions }: { state: any, actions: any }) => {
       </ViewTitle>
 
       <div className="grid grid-cols-1 gap-4">
-        {state.products.map((p: Product) => (
+        {state.products.map((p: any) => (
           <Card key={p.id} className="flex justify-between items-center group">
             <div className="flex-1">
               <h4 className="font-bold text-stone-800">{p.name}</h4>
@@ -529,7 +541,12 @@ const ProductsView = ({ state, actions }: { state: any, actions: any }) => {
               <p className="font-bold text-primary mb-2">{formatCurrency(p.price)}</p>
               <div className="flex gap-2 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={() => { setEditingItem(p); setShowModal(true); }} className="p-1 text-stone-400 hover:text-stone-600"><Edit2 size={16}/></button>
-                <button onClick={() => actions.deleteProduct(p.id)} className="p-1 text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
+                <button onClick={async () => {
+                   if(confirm('Excluir produto?')) {
+                     await actions.deleteProduct(p.id);
+                     toast.success('Produto excluído');
+                   }
+                }} className="p-1 text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
               </div>
             </div>
           </Card>
@@ -578,27 +595,30 @@ const FinancesView = ({ state, actions }: { state: any, actions: any }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
 
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
     const data: any = {
       description: formData.get('description') as string,
       value: parseFloat(formData.get('value') as string),
-      date: formData.get('date') as string || new Date().toISOString().split('T')[0],
     };
 
-    if (activeTab === 'entries') {
-      data.paymentType = formData.get('paymentType') as PaymentMethod;
-      if (editingItem) actions.updateEntry(editingItem.id, data);
-      else actions.addEntry(data);
-    } else {
-      data.category = formData.get('category') as ExitCategory;
-      if (editingItem) actions.updateExit(editingItem.id, data);
-      else actions.addExit(data);
+    try {
+      if (activeTab === 'entries') {
+        data.payment_type = formData.get('paymentType') as string;
+        if (editingItem) await actions.updateEntry(editingItem.id, data);
+        else await actions.addEntry(data);
+      } else {
+        data.category = formData.get('category') as string;
+        if (editingItem) await actions.updateExit(editingItem.id, data);
+        else await actions.addExit(data);
+      }
+      toast.success('Lançamento salvo!');
+      setShowModal(false);
+      setEditingItem(null);
+    } catch (err) {
+      toast.error('Erro ao salvar lançamento');
     }
-
-    setShowModal(false);
-    setEditingItem(null);
   };
 
   return (
@@ -639,9 +659,9 @@ const FinancesView = ({ state, actions }: { state: any, actions: any }) => {
             <div>
               <h4 className="font-bold text-stone-800">{item.description}</h4>
               <div className="flex gap-3 text-[10px] uppercase font-bold tracking-wider mt-1">
-                <span className="text-stone-400">{item.date}</span>
+                <span className="text-stone-400">{formatDate(item.created_at)}</span>
                 <span className={activeTab === 'entries' ? 'text-green-500' : 'text-red-500'}>
-                  {activeTab === 'entries' ? item.paymentType : item.category}
+                  {activeTab === 'entries' ? item.payment_type : item.category}
                 </span>
               </div>
             </div>
@@ -652,7 +672,13 @@ const FinancesView = ({ state, actions }: { state: any, actions: any }) => {
               <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
                 <button onClick={() => { setEditingItem(item); setShowModal(true); }} className="p-1 text-stone-300 hover:text-stone-600"><Edit2 size={16}/></button>
                 <button 
-                  onClick={() => activeTab === 'entries' ? actions.deleteEntry(item.id) : actions.deleteExit(item.id)} 
+                  onClick={async () => {
+                    if(confirm('Excluir lançamento?')) {
+                      if (activeTab === 'entries') await actions.deleteEntry(item.id);
+                      else await actions.deleteExit(item.id);
+                      toast.success('Lançamento excluído');
+                    }
+                  }} 
                   className="p-1 text-red-200 hover:text-red-500"
                 >
                   <Trash2 size={16}/>
@@ -678,21 +704,17 @@ const FinancesView = ({ state, actions }: { state: any, actions: any }) => {
                 <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Descrição</label>
                 <input required name="description" defaultValue={editingItem?.description} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Valor</label>
                   <input required type="number" step="0.01" name="value" defaultValue={editingItem?.value} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Data</label>
-                  <input type="date" name="date" defaultValue={editingItem?.date || new Date().toISOString().split('T')[0]} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none" />
                 </div>
               </div>
               
               {activeTab === 'entries' ? (
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Forma de Pagamento</label>
-                  <select name="paymentType" defaultValue={editingItem?.paymentType || PaymentMethod.PIX} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
+                  <select name="paymentType" defaultValue={editingItem?.payment_type || PaymentMethod.PIX} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
                     <option value={PaymentMethod.PIX}>Pix</option>
                     <option value={PaymentMethod.CASH}>Dinheiro</option>
                     <option value={PaymentMethod.CARD}>Cartão</option>
@@ -728,12 +750,12 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
 
   const todayData = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    const todayEntries = state.entries.filter((e: any) => e.date.startsWith(today) && !e.isClosed);
-    const todayExits = state.exits.filter((e: any) => e.date.startsWith(today) && !e.isClosed);
-    const todayOrders = state.orders.filter((o: any) => o.createdAt.startsWith(today) && !o.isClosed);
+    const todayEntries = state.entries.filter((e: any) => e.created_at.startsWith(today));
+    const todayExits = state.exits.filter((e: any) => e.created_at.startsWith(today));
+    const todayOrders = state.orders.filter((o: any) => o.created_at.startsWith(today));
     
-    const totalEntries = todayEntries.reduce((sum: number, e: any) => sum + e.value, 0);
-    const totalExits = todayExits.reduce((sum: number, e: any) => sum + e.value, 0);
+    const totalEntries = todayEntries.reduce((sum: number, e: any) => sum + Number(e.value), 0);
+    const totalExits = todayExits.reduce((sum: number, e: any) => sum + Number(e.value), 0);
     
     return {
       date: today,
@@ -750,19 +772,34 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
   }, [state]);
 
   const hasClosedToday = useMemo(() => {
-    return state.closings.some((c: any) => c.date === todayData.date);
+    return state.closings.some((c: any) => c.closing_date === todayData.date);
   }, [state.closings, todayData.date]);
 
-  const handleClose = () => {
+  const handleClose = async () => {
     if (hasClosedToday) {
       if (!confirm('O caixa de hoje já foi fechado. Deseja refazer o fechamento com os dados atuais?')) return;
     } else {
       if (!confirm('Tem certeza que deseja fechar o caixa de hoje? Depois você poderá consultar esse fechamento no histórico.')) return;
     }
 
-    actions.closeCash(todayData, true);
-    alert('Caixa fechado com sucesso!');
-    setActiveStep('history');
+    try {
+      const closingToSave = {
+        closing_date: todayData.date,
+        total_orders: todayData.orderCount,
+        completed_orders: todayData.completedOrders,
+        canceled_orders: todayData.cancelledOrders,
+        entries_total: todayData.totalEntries,
+        exits_total: todayData.totalExits,
+        estimated_profit: todayData.profit,
+        snapshot: todayData
+      };
+
+      await actions.closeCash(closingToSave);
+      toast.success('Caixa fechado com sucesso!');
+      setActiveStep('history');
+    } catch (err) {
+      toast.error('Erro ao fechar caixa');
+    }
   };
 
   const handlePrint = (closing: any) => {
@@ -772,7 +809,7 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
     const content = `
       <html>
         <head>
-          <title>Prestação de Caixa - ${closing.date}</title>
+          <title>Prestação de Caixa - ${closing.closing_date}</title>
           <style>
             body { font-family: sans-serif; padding: 40px; color: #4A3728; }
             h1 { font-family: serif; font-style: italic; font-size: 32px; margin-bottom: 0px; }
@@ -782,7 +819,7 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
             .stat-box { background: #FDFBF7; padding: 15px; border-radius: 10px; }
             .stat-label { font-size: 10px; font-weight: bold; color: #888; margin-bottom: 5px; text-transform: uppercase; }
             .stat-value { font-size: 18px; font-weight: bold; }
-            .stat-profit { color: ${closing.profit >= 0 ? '#10b981' : '#ef4444'}; }
+            .stat-profit { color: ${closing.estimated_profit >= 0 ? '#10b981' : '#ef4444'}; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th { text-align: left; font-size: 10px; border-bottom: 1px solid #eee; padding: 10px 5px; color: #888; text-transform: uppercase; }
             td { padding: 10px 5px; border-bottom: 1px solid #f9f9f9; font-size: 12px; }
@@ -798,25 +835,25 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
           
           <div class="header-info">
             <h2 style="margin: 0; font-size: 20px;">PRESTAÇÃO DO CAIXA</h2>
-            <p style="margin: 5px 0 0 0; opacity: 0.6;">Data: ${closing.date} | Fechado em: ${new Date(closing.createdAt).toLocaleTimeString()}</p>
+            <p style="margin: 5px 0 0 0; opacity: 0.6;">Data: ${closing.closing_date} | Fechado em: ${new Date(closing.closed_at).toLocaleTimeString()}</p>
           </div>
 
           <div class="summary">
             <div class="stat-box">
               <div class="stat-label">Total de Pedidos</div>
-              <div class="stat-value">${closing.orderCount} (${closing.completedOrders} concluídos)</div>
+              <div class="stat-value">${closing.total_orders} (${closing.completed_orders} concluídos)</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Total de Entradas</div>
-              <div class="stat-value">R$ ${closing.totalEntries.toFixed(2)}</div>
+              <div class="stat-value">R$ ${Number(closing.entries_total).toFixed(2)}</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Total de Saídas</div>
-              <div class="stat-value">R$ ${closing.totalExits.toFixed(2)}</div>
+              <div class="stat-value">R$ ${Number(closing.exits_total).toFixed(2)}</div>
             </div>
             <div class="stat-box">
               <div class="stat-label">Lucro Estimado</div>
-              <div class="stat-value stat-profit">R$ ${closing.profit.toFixed(2)}</div>
+              <div class="stat-value stat-profit">R$ ${Number(closing.estimated_profit).toFixed(2)}</div>
             </div>
           </div>
 
@@ -830,14 +867,14 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
               </tr>
             </thead>
             <tbody>
-              ${closing.entries.map((e: any) => `
+              ${(closing.snapshot?.entries || []).map((e: any) => `
                 <tr>
                   <td>${e.description}</td>
-                  <td>${e.paymentType}</td>
-                  <td>R$ ${e.value.toFixed(2)}</td>
+                  <td>${e.payment_type}</td>
+                  <td>R$ ${Number(e.value).toFixed(2)}</td>
                 </tr>
               `).join('')}
-              ${closing.entries.length === 0 ? '<tr><td colspan="3" style="text-align:center">Nenhuma entrada</td></tr>' : ''}
+              ${(!closing.snapshot?.entries || closing.snapshot.entries.length === 0) ? '<tr><td colspan="3" style="text-align:center">Nenhuma entrada</td></tr>' : ''}
             </tbody>
           </table>
 
@@ -851,14 +888,14 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
               </tr>
             </thead>
             <tbody>
-              ${closing.exits.map((e: any) => `
+              ${(closing.snapshot?.exits || []).map((e: any) => `
                 <tr>
                   <td>${e.description}</td>
                   <td>${e.category}</td>
-                  <td>R$ ${e.value.toFixed(2)}</td>
+                  <td>R$ ${Number(e.value).toFixed(2)}</td>
                 </tr>
               `).join('')}
-              ${closing.exits.length === 0 ? '<tr><td colspan="3" style="text-align:center">Nenhuma saída</td></tr>' : ''}
+              ${(!closing.snapshot?.exits || closing.snapshot.exits.length === 0) ? '<tr><td colspan="3" style="text-align:center">Nenhuma saída</td></tr>' : ''}
             </tbody>
           </table>
 
@@ -950,16 +987,16 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
           {state.closings.map((closing: any) => (
             <Card key={closing.id} className="flex justify-between items-center group p-6 rounded-[32px] hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedClosing(closing)}>
               <div>
-                <p className="font-black text-lg text-primary">{new Date(closing.date + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                <p className="font-black text-lg text-primary">{new Date(closing.closing_date + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
                 <div className="flex items-center gap-2 mt-1">
                    <Clock size={12} className="text-stone-400" />
-                   <p className="text-[10px] text-stone-500 font-bold uppercase">{new Date(closing.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                   <p className="text-[10px] text-stone-500 font-bold uppercase">{new Date(closing.closed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
               </div>
               <div className="text-right flex items-center gap-6">
                 <div>
-                  <p className={`font-black text-xl ${closing.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatCurrency(closing.profit)}
+                  <p className={`font-black text-xl ${Number(closing.estimated_profit) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatCurrency(Number(closing.estimated_profit))}
                   </p>
                   <p className="text-[10px] font-bold text-stone-400 uppercase">Lucro Final</p>
                 </div>
@@ -1003,19 +1040,19 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-warm-bg p-4 rounded-2xl text-center">
                   <p className="text-[10px] font-bold text-stone-400 uppercase mb-1">Pedidos</p>
-                  <p className="text-xl font-black">{selectedClosing.orderCount}</p>
+                  <p className="text-xl font-black">{selectedClosing.total_orders}</p>
                 </div>
                 <div className="bg-warm-bg p-4 rounded-2xl text-center">
                   <p className="text-[10px] font-bold text-stone-400 uppercase mb-1">Entradas</p>
-                  <p className="text-xl font-black text-green-600">{formatCurrency(selectedClosing.totalEntries)}</p>
+                  <p className="text-xl font-black text-green-600">{formatCurrency(selectedClosing.entries_total)}</p>
                 </div>
                 <div className="bg-warm-bg p-4 rounded-2xl text-center">
                   <p className="text-[10px] font-bold text-stone-400 uppercase mb-1">Saídas</p>
-                  <p className="text-xl font-black text-red-600">{formatCurrency(selectedClosing.totalExits)}</p>
+                  <p className="text-xl font-black text-red-600">{formatCurrency(selectedClosing.exits_total)}</p>
                 </div>
                 <div className="bg-warm-bg p-4 rounded-2xl text-center">
                   <p className="text-[10px] font-bold text-stone-400 uppercase mb-1">Lucro</p>
-                  <p className={`text-xl font-black ${selectedClosing.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(selectedClosing.profit)}</p>
+                  <p className={`text-xl font-black ${selectedClosing.estimated_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(selectedClosing.estimated_profit)}</p>
                 </div>
               </div>
 
@@ -1026,16 +1063,16 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
                     <TrendingUp size={16} className="text-green-500" /> Detalhes de Entradas
                   </h4>
                   <div className="space-y-2">
-                    {selectedClosing.entries.map((e: any) => (
+                    {(selectedClosing.snapshot?.entries || []).map((e: any) => (
                       <div key={e.id} className="flex justify-between items-center text-sm p-3 bg-stone-50 rounded-xl">
                         <div>
                           <p className="font-bold">{e.description}</p>
-                          <p className="text-[10px] opacity-50 uppercase font-bold">{e.paymentType}</p>
+                          <p className="text-[10px] opacity-50 uppercase font-bold">{e.payment_type}</p>
                         </div>
                         <p className="font-black text-green-600">{formatCurrency(e.value)}</p>
                       </div>
                     ))}
-                    {selectedClosing.entries.length === 0 && <p className="text-center py-4 text-stone-400 text-xs italic">Nenhuma entrada registrada.</p>}
+                    {(!selectedClosing.snapshot?.entries || selectedClosing.snapshot.entries.length === 0) && <p className="text-center py-4 text-stone-400 text-xs italic">Nenhuma entrada registrada.</p>}
                   </div>
                 </div>
 
@@ -1044,7 +1081,7 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
                     <TrendingDown size={16} className="text-red-500" /> Detalhes de Saídas
                   </h4>
                   <div className="space-y-2">
-                    {selectedClosing.exits.map((e: any) => (
+                    {(selectedClosing.snapshot?.exits || []).map((e: any) => (
                       <div key={e.id} className="flex justify-between items-center text-sm p-3 bg-stone-50 rounded-xl">
                         <div>
                           <p className="font-bold">{e.description}</p>
@@ -1053,7 +1090,7 @@ const CashClosingView = ({ state, actions }: { state: any, actions: any }) => {
                         <p className="font-black text-red-600">{formatCurrency(e.value)}</p>
                       </div>
                     ))}
-                    {selectedClosing.exits.length === 0 && <p className="text-center py-4 text-stone-400 text-xs italic">Nenhuma saída registrada.</p>}
+                    {(!selectedClosing.snapshot?.exits || selectedClosing.snapshot.exits.length === 0) && <p className="text-center py-4 text-stone-400 text-xs italic">Nenhuma saída registrada.</p>}
                   </div>
                 </div>
               </div>
@@ -1087,18 +1124,20 @@ const ReportsView = ({ state }: { state: any }) => {
     // Generate last X days
     const range = period === 0 ? 30 : period;
     const days = [];
+    const today = new Date();
+    
     for (let i = range - 1; i >= 0; i--) {
       const d = new Date();
-      d.setDate(d.getDate() - i);
+      d.setDate(today.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       
-      const dayEntries = state.entries.filter((e: any) => e.date.startsWith(dateStr));
-      const dayExits = state.exits.filter((e: any) => e.date.startsWith(dateStr));
+      const dayEntries = state.entries.filter((e: any) => e.created_at.startsWith(dateStr));
+      const dayExits = state.exits.filter((e: any) => e.created_at.startsWith(dateStr));
       
       days.push({
-        name: dateStr.split('-').slice(1).reverse().join('/'),
-        receita: dayEntries.reduce((sum: number, e: any) => sum + e.value, 0),
-        despesa: dayExits.reduce((sum: number, e: any) => sum + e.value, 0),
+        name: d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
+        receita: dayEntries.reduce((sum: number, e: any) => sum + Number(e.value), 0),
+        despesa: dayExits.reduce((sum: number, e: any) => sum + Number(e.value), 0),
       });
     }
     return days;
@@ -1106,15 +1145,18 @@ const ReportsView = ({ state }: { state: any }) => {
 
   const productData = useMemo(() => {
     const sales: Record<string, number> = {};
-    state.orders.filter((o: Order) => o.status === OrderStatus.COMPLETED).forEach((o: Order) => {
-      o.items.forEach(item => {
-        sales[item.name] = (sales[item.name] || 0) + item.quantity;
+    state.orders.filter((o: any) => o.status === OrderStatus.COMPLETED).forEach((o: any) => {
+      o.items?.forEach((item: any) => {
+        sales[item.product_name] = (sales[item.product_name] || 0) + Number(item.quantity);
       });
     });
     return Object.entries(sales).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value).slice(0, 5);
   }, [state]);
 
   const COLORS = ['#8B4513', '#F4A460', '#FF8C00', '#FFD700', '#CD853F'];
+
+  const totalRecebido = useMemo(() => state.entries.reduce((s: number, e: any) => s + Number(e.value), 0), [state.entries]);
+  const totalDespesa = useMemo(() => state.exits.reduce((s: number, e: any) => s + Number(e.value), 0), [state.exits]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -1154,34 +1196,42 @@ const ReportsView = ({ state }: { state: any }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="h-80 flex flex-col">
           <h3 className="font-bold text-stone-700 mb-4 text-center">Top 5 Tapiocas Vendidas</h3>
-          <div className="flex-1">
-            <ResponsiveContainer width="100%" height="100%">
-              <RePieChart>
-                <Pie
-                  data={productData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {productData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </RePieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid grid-cols-2 gap-1 text-[10px] mt-2">
-            {productData.map((d, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                <span className="truncate">{d.name} ({d.value})</span>
+          {productData.length > 0 ? (
+            <>
+              <div className="flex-1">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RePieChart>
+                    <Pie
+                      data={productData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {productData.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </RePieChart>
+                </ResponsiveContainer>
               </div>
-            ))}
-          </div>
+              <div className="grid grid-cols-2 gap-1 text-[10px] mt-2">
+                {productData.map((d, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                    <span className="truncate">{d.name} ({d.value})</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-stone-400 text-sm italic">
+              Nenhuma venda registrada.
+            </div>
+          )}
         </Card>
 
         <Card>
@@ -1189,16 +1239,16 @@ const ReportsView = ({ state }: { state: any }) => {
           <div className="space-y-4">
             <div className="flex justify-between items-center py-2 border-b border-stone-50">
               <span className="text-sm text-stone-500">Total Recebido:</span>
-              <span className="font-bold text-green-600">{formatCurrency(state.entries.reduce((s: any, e: any) => s+e.value, 0))}</span>
+              <span className="font-bold text-green-600">{formatCurrency(totalRecebido)}</span>
             </div>
             <div className="flex justify-between items-center py-2 border-b border-stone-50">
               <span className="text-sm text-stone-500">Total Despesa:</span>
-              <span className="font-bold text-red-600">{formatCurrency(state.exits.reduce((s: any, e: any) => s+e.value, 0))}</span>
+              <span className="font-bold text-red-600">{formatCurrency(totalDespesa)}</span>
             </div>
             <div className="flex justify-between items-center py-2">
               <span className="text-sm text-stone-500">Lucro Acumulado:</span>
               <span className="font-black text-stone-800 text-lg">
-                {formatCurrency(state.entries.reduce((s: any, e: any) => s+e.value, 0) - state.exits.reduce((s: any, e: any) => s+e.value, 0))}
+                {formatCurrency(totalRecebido - totalDespesa)}
               </span>
             </div>
           </div>
@@ -1208,51 +1258,26 @@ const ReportsView = ({ state }: { state: any }) => {
   );
 };
 
-const BackupView = ({ actions }: { actions: any }) => {
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        actions.importData(json);
-        alert('Dados importados com sucesso!');
-      } catch (err) {
-        alert('Erro ao importar arquivo. Verifique se o formato está correto.');
-      }
-    };
-    reader.readAsText(file);
-  };
-
+const BackupView = () => {
   return (
     <div className="space-y-6 pb-20">
-      <ViewTitle title="Configurações e Backup" />
+      <ViewTitle title="Configurações" />
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <Card className="p-6 flex flex-col items-center text-center">
-          <div className="bg-blue-100 text-blue-600 p-4 rounded-full mb-4"><Download size={32} /></div>
-          <h4 className="font-bold text-stone-800 mb-2">Exportar Dados</h4>
-          <p className="text-xs text-stone-400 mb-6">Baixe uma cópia de segurança de todos os seus pedidos, produtos e financeiro em formato JSON.</p>
-          <button onClick={actions.exportData} className="w-full bg-blue-600 text-white font-bold py-3 rounded-2xl hover:opacity-90">Exportar Agora</button>
-        </Card>
-
-        <Card className="p-6 flex flex-col items-center text-center">
-          <div className="bg-purple-100 text-purple-600 p-4 rounded-full mb-4"><Upload size={32} /></div>
-          <h4 className="font-bold text-stone-800 mb-2">Importar Dados</h4>
-          <p className="text-xs text-stone-400 mb-6">Restaure seus dados de um arquivo de backup previamente exportado. Esta ação substituirá os atuais.</p>
-          <label className="w-full bg-purple-600 text-white font-bold py-3 rounded-2xl hover:opacity-90 cursor-pointer block text-center">
-            Selecionar Arquivo
-            <input type="file" className="hidden" accept=".json" onChange={handleImport} />
-          </label>
-        </Card>
-
-        <Card className="p-6 flex flex-col items-center text-center border-red-100 bg-red-50 sm:col-span-2">
-          <div className="bg-red-100 text-red-600 p-4 rounded-full mb-4"><Trash2 size={32} /></div>
-          <h4 className="font-bold text-red-800 mb-2">Zona de Perigo</h4>
-          <p className="text-xs text-red-400 mb-6 font-medium">Esta ação irá apagar definitivamente todos os registros salvos no seu navegador.</p>
-          <button onClick={actions.clearData} className="bg-red-600 text-white font-bold px-8 py-3 rounded-2xl hover:bg-red-700 transition-colors">Limpar Todo o Sistema</button>
+          <div className="bg-stone-100 text-stone-600 p-4 rounded-full mb-4">
+            <Settings size={32} />
+          </div>
+          <h4 className="font-bold text-stone-800 mb-2">Sistema em Nuvem</h4>
+          <p className="text-sm text-stone-400 mb-6">
+            O sistema está conectado ao Supabase. Todos os seus dados são salvos automaticamente na nuvem de forma segura.
+          </p>
+          <div className="w-full bg-stone-50 rounded-2xl p-4 border border-stone-100 flex items-center justify-between">
+            <span className="text-xs font-bold text-stone-500 uppercase">Status do Banco</span>
+            <span className="flex items-center gap-1.5 text-xs font-bold text-green-600">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" /> Conectado
+            </span>
+          </div>
         </Card>
       </div>
     </div>
@@ -1262,10 +1287,42 @@ const BackupView = ({ actions }: { actions: any }) => {
 // --- Main App ---
 
 export default function App() {
-  const { state, isLoaded, ...actions } = useStore();
+  const { state, actions, loading } = useStore();
   const [activeView, setActiveView] = useState<'dashboard' | 'orders' | 'products' | 'finances' | 'closing' | 'reports' | 'settings'>('dashboard');
 
-  if (!isLoaded) return <div className="h-screen w-screen flex items-center justify-center bg-warm-bg text-stone-300">Carregando...</div>;
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-warm-bg flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-white p-8 rounded-[40px] shadow-xl max-w-md w-full border border-orange-100">
+          <div className="bg-orange-100 text-orange-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Settings size={32} />
+          </div>
+          <h2 className="text-2xl font-black text-primary italic mb-4">Configuração Necessária</h2>
+          <p className="text-stone-500 mb-8 leading-relaxed">
+            Para começar a usar o <strong>Eliza Tapiocas</strong> com Supabase, você precisa configurar as chaves de API no ambiente.
+          </p>
+          <div className="space-y-3 text-left bg-stone-50 p-4 rounded-2xl border border-stone-100 mb-8">
+            <p className="text-[10px] font-bold text-stone-400 uppercase">Variáveis necessárias:</p>
+            <div className="font-mono text-xs text-stone-600 break-all p-2 bg-white rounded border border-stone-100">VITE_SUPABASE_URL</div>
+            <div className="font-mono text-xs text-stone-600 break-all p-2 bg-white rounded border border-stone-100">VITE_SUPABASE_ANON_KEY</div>
+          </div>
+          <p className="text-xs text-stone-400 italic">
+            Adicione estas chaves nas configurações do projeto para ativar o banco de dados.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-warm-bg flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin mb-4"></div>
+        <h2 className="text-2xl font-black text-primary italic">Eliza Tapiocas</h2>
+        <p className="text-stone-400 font-bold uppercase tracking-widest text-xs mt-2">Conectando ao Supabase...</p>
+      </div>
+    );
+  }
 
   const NavItem = ({ id, label, icon: Icon }: { id: any, label: string, icon: any }) => {
     const active = activeView === id;
@@ -1363,7 +1420,7 @@ export default function App() {
             {activeView === 'finances' && <FinancesView state={state} actions={actions} />}
             {activeView === 'closing' && <CashClosingView state={state} actions={actions} />}
             {activeView === 'reports' && <ReportsView state={state} />}
-            {activeView === 'settings' && <BackupView actions={actions} />}
+            {activeView === 'settings' && <BackupView />}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -1376,6 +1433,7 @@ export default function App() {
         <NavItem id="reports" label="Relatórios" icon={PieChart} />
         <NavItem id="closing" label="Fechar" icon={CheckCircle2} />
       </nav>
+      <Toaster position="top-center" />
     </div>
   );
 }
