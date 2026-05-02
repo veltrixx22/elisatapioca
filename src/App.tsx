@@ -2,7 +2,7 @@
  * Eliza Tapiocas - Internal Management System
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   ShoppingBag, 
@@ -228,6 +228,34 @@ const DashboardView = ({ state, actions, setActiveView }: { state: any, actions:
 const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
   const [showModal, setShowModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<any>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string>(PaymentMethod.PIX);
+  const [cashReceived, setCashReceived] = useState<number>(0);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [currentTotal, setCurrentTotal] = useState<number>(0);
+
+  useEffect(() => {
+    if (editingOrder) {
+      setPaymentMethod(editingOrder.payment_method);
+      setCashReceived(editingOrder.cash_received || 0);
+      const q: Record<string, number> = {};
+      editingOrder.items?.forEach((i: any) => {
+        q[i.product_id] = i.quantity;
+      });
+      setQuantities(q);
+    } else {
+      setPaymentMethod(PaymentMethod.PIX);
+      setCashReceived(0);
+      setQuantities({});
+    }
+  }, [editingOrder, showModal]);
+
+  useEffect(() => {
+    const total = state.products.reduce((sum: number, p: Product) => {
+      const qty = quantities[p.id] || 0;
+      return sum + (p.price * qty);
+    }, 0);
+    setCurrentTotal(total);
+  }, [quantities, state.products]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -235,7 +263,7 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
     
     const items: any[] = [];
     state.products.forEach((p: Product) => {
-      const qty = parseInt(formData.get(`qty_${p.id}`) as string || '0');
+      const qty = quantities[p.id] || 0;
       if (qty > 0) {
         items.push({
           product_id: p.id,
@@ -252,7 +280,19 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
       return;
     }
 
-    const total = items.reduce((sum, i) => sum + i.subtotal, 0);
+    const total = currentTotal;
+    const pMethod = paymentMethod;
+    let cashRcv = 0;
+    let change = 0;
+
+    if (pMethod === PaymentMethod.CASH) {
+      cashRcv = cashReceived;
+      if (cashRcv < total) {
+        toast.error('O valor pago é menor que o total do pedido.');
+        return;
+      }
+      change = cashRcv - total;
+    }
     
     const orderData = {
       customer_name: formData.get('customerName') as string,
@@ -261,7 +301,9 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
       address: formData.get('address') as string,
       items,
       total,
-      payment_method: formData.get('paymentMethod') as string,
+      payment_method: pMethod,
+      cash_received: cashRcv,
+      change_amount: change,
       status: formData.get('status') as string,
       notes: formData.get('observations') as string,
     };
@@ -327,7 +369,15 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
               </div>
 
               <div className="flex justify-between items-center border-t border-stone-50 pt-3">
-                <span className="font-bold text-primary">{formatCurrency(order.total)}</span>
+                <div className="flex flex-col">
+                  <span className="font-bold text-primary">{formatCurrency(order.total)}</span>
+                  {order.payment_method === PaymentMethod.CASH && (
+                    <div className="text-[10px] text-stone-400 font-medium">
+                      Pagou: {formatCurrency(order.cash_received || 0)} | 
+                      Troco: <span className="text-green-600 font-bold">{formatCurrency(order.change_amount || 0)}</span>
+                    </div>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <button 
                     onClick={() => { setEditingOrder(order); setShowModal(true); }}
@@ -440,7 +490,8 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
                           type="number" 
                           name={`qty_${p.id}`} 
                           min="0" 
-                          defaultValue={item?.quantity || 0}
+                          value={quantities[p.id] || 0}
+                          onChange={(e) => setQuantities(prev => ({ ...prev, [p.id]: parseInt(e.target.value) || 0 }))}
                           className="w-16 bg-white border border-stone-200 rounded-lg px-2 py-1 text-center font-bold outline-none focus:border-accent"
                         />
                       </div>
@@ -452,7 +503,12 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-stone-100 pt-4">
                 <div>
                   <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Forma de Pagamento</label>
-                  <select name="paymentMethod" defaultValue={editingOrder?.payment_method || PaymentMethod.PIX} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none">
+                  <select 
+                    name="paymentMethod" 
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none"
+                  >
                     <option value={PaymentMethod.PIX}>Pix</option>
                     <option value={PaymentMethod.CASH}>Dinheiro</option>
                     <option value={PaymentMethod.CARD}>Cartão</option>
@@ -463,6 +519,50 @@ const OrdersView = ({ state, actions }: { state: any, actions: any }) => {
                   <textarea name="observations" defaultValue={editingOrder?.notes} className="w-full bg-stone-50 border border-stone-100 rounded-xl px-4 py-2 outline-none h-10" />
                 </div>
               </div>
+
+              {paymentMethod === PaymentMethod.CASH && (
+                <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 space-y-3">
+                  <div className="flex justify-between items-center text-sm border-b border-orange-100 pb-2">
+                    <span className="text-stone-600 font-bold uppercase text-[10px]">Total do Pedido:</span>
+                    <span className="font-black text-lg text-primary">{formatCurrency(currentTotal)}</span>
+                  </div>
+
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-stone-500 uppercase">Cliente vai pagar com:</span>
+                    <div className="flex items-center gap-2">
+                       <span className="text-stone-400 font-bold">R$</span>
+                       <input 
+                        type="number" 
+                        step="0.01" 
+                        name="cashReceived"
+                        value={cashReceived || ''}
+                        onChange={(e) => setCashReceived(parseFloat(e.target.value) || 0)}
+                        placeholder="0,00"
+                        className="w-24 bg-white border border-stone-200 rounded-lg px-2 py-1 text-right font-bold outline-none focus:border-accent"
+                       />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center py-2 border-t border-orange-100">
+                    <span className="text-sm font-bold text-stone-800">Troco a devolver:</span>
+                    <div className="text-right">
+                      {cashReceived > 0 ? (
+                        <>
+                          {cashReceived >= currentTotal ? (
+                            <p className={`text-xl font-black ${cashReceived > currentTotal ? 'text-green-600' : 'text-stone-600'}`}>
+                              {cashReceived === currentTotal ? 'Sem troco' : formatCurrency(cashReceived - currentTotal)}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] font-bold text-red-500 uppercase">O valor pago é menor que o total do pedido.</p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-sm text-stone-400 italic">Aguardando valor...</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <button type="submit" className="w-full bg-accent text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 mt-4 hover:opacity-90">
                 <Save size={20} /> {editingOrder ? 'Salvar Edições' : 'Cadastrar Pedido'}
@@ -493,13 +593,19 @@ const ProductsView = ({ state, actions }: { state: any, actions: any }) => {
         await actions.updateProduct(editingItem.id, data);
         toast.success('Produto atualizado!');
       } else {
-        await actions.addProduct({ ...data, is_active: true });
+        await actions.addProduct({ 
+          name: data.name,
+          category: data.category,
+          price: Number(data.price),
+          is_active: true 
+        });
         toast.success('Produto cadastrado!');
       }
       setShowModal(false);
       setEditingItem(null);
-    } catch (err) {
-      toast.error('Erro ao salvar produto');
+    } catch (err: any) {
+      console.error("Erro Supabase ao salvar produto:", err);
+      toast.error(err.message || 'Erro ao salvar produto');
     }
   };
 
@@ -543,8 +649,13 @@ const ProductsView = ({ state, actions }: { state: any, actions: any }) => {
                 <button onClick={() => { setEditingItem(p); setShowModal(true); }} className="p-1 text-stone-400 hover:text-stone-600"><Edit2 size={16}/></button>
                 <button onClick={async () => {
                    if(confirm('Excluir produto?')) {
-                     await actions.deleteProduct(p.id);
-                     toast.success('Produto excluído');
+                     try {
+                       await actions.deleteProduct(p.id);
+                       toast.success('Produto excluído');
+                     } catch (err: any) {
+                       console.error("Erro Supabase ao excluir produto:", err);
+                       toast.error(err.message || 'Erro ao excluir produto');
+                     }
                    }
                 }} className="p-1 text-red-300 hover:text-red-500"><Trash2 size={16}/></button>
               </div>

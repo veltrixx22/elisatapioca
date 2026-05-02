@@ -55,6 +55,8 @@ export interface Order {
   status: string;
   notes?: string;
   total: number;
+  cash_received?: number;
+  change_amount?: number;
   created_at: string;
   items?: OrderItem[];
 }
