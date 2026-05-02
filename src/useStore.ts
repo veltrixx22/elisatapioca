@@ -14,6 +14,7 @@ export function useStore() {
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
+    if (!supabase) return; // Não tenta buscar se o supabase for null
     setLoading(true);
     try {
       const [
